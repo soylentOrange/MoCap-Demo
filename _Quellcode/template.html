@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markerlose Bewegungsanalyse – Demo (MediaPipe Pose)</title>
+<style>
+  :root {
+    --bg: #14181d; --panel: #1d232a; --line: #2e3740; --text: #e6e9ec; --muted: #9aa5b1;
+    --accent: #3fb6c8; --left: #ff8a3d; --right: #4da3ff; --center: #d9dde1;
+  }
+  * { box-sizing: border-box; }
+  html { height: 100%; } body { margin: 0; height: 100%; display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+    padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; font-weight: 600; }
+  .group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .sep { width: 1px; height: 24px; background: var(--line); }
+  button, select, label.btn {
+    background: #27303a; color: var(--text); border: 1px solid #3a4652; border-radius: 6px;
+    padding: 6px 10px; font: inherit; cursor: pointer; }
+  button:hover, label.btn:hover { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: #1f6f7b; border-color: #2a8b99; }
+  button.rec { background: #7b2a2a; border-color: #a33; }
+  input[type=file] { display: none; }
+  .chk { display: inline-flex; gap: 4px; align-items: center; color: var(--muted); cursor: pointer; }
+  #status { margin-left: auto; color: var(--muted); font-size: 13px; }
+  #status.err { color: #ff6b6b; }
+  main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto; gap: 12px; padding: 12px;
+    flex: 1; min-height: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    position: relative; overflow: hidden; min-height: 0; display: flex; flex-direction: column; }
+  .card h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0;
+    padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: center; }
+  .card h2 .hint { font-weight: 400; margin-left: auto; font-size: 12px; }
+  #videoWrap { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: #0d1014; }
+  #videoBox { position: relative; }
+  #video { display: block; width: 100%; height: 100%; }
+  #overlay { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+  #videoBox.mirror #video { transform: scaleX(-1); }
+  #placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); text-align: center; padding: 20px; font-size: 15px; }
+  #tareMsg { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center;
+    background: rgba(10,14,18,.55); font-size: 18px; line-height: 1.5; z-index: 2; }
+  #tareMsg .big { font-size: 72px; font-weight: 700; color: var(--accent); line-height: 1.2; }
+  #videoCtl { display: none; gap: 8px; align-items: center; padding: 6px 12px; border-top: 1px solid var(--line); }
+  #videoCtl input[type=range] { flex: 1; }
+  #view3d { flex: 1; width: 100%; min-height: 0; cursor: grab; touch-action: none; }
+  #view3d:active { cursor: grabbing; }
+  #bottom { grid-column: 1 / span 2; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 12px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 3px 12px; text-align: right; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { color: var(--muted); font-weight: 500; }
+  td.l { color: var(--left); } td.r { color: var(--right); }
+  td.low { opacity: .35; }
+  tbody tr { cursor: pointer; }
+  tbody tr.sel { background: #26313b; }
+  #plot { width: 100%; height: 150px; display: block; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
+  .legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; background: currentColor; }
+  .legend .l { color: var(--left); } .legend .r { color: var(--right); }
+  #help { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 10; }
+  #help .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; max-width: 760px; max-height: 85vh; overflow: auto; padding: 18px 24px; }
+  #help h3 { margin-top: 0; }
+  #help li { margin-bottom: 4px; }
+  @media (max-width: 900px) {
+    body { height: auto; }
+    main { grid-template-columns: 1fr; }
+    #bottom { grid-column: 1; grid-template-columns: 1fr; }
+    .card { min-height: 320px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Markerlose Bewegungsanalyse</h1>
+  <div class="group">
+    <button id="btnCam" class="primary" disabled>Webcam starten</button>
+    <label class="btn" id="lblFile" title="Videodatei (mp4, webm, mov) laden">Video laden…<input type="file" id="fileInput" accept="video/*"></label>
+    <button id="btnStop" disabled>Stopp</button>
+  </div>
+  <div class="sep"></div>
+  <div class="group">
+    <label class="chk" title="Genauigkeit vs. Geschwindigkeit">Modell
+      <select id="selModel">
+        <option value="full">Full (genauer)</option>
+        <option value="lite">Lite (schneller)</option>
+      </select>
+    </label>
+    <label class="chk" title="Gelenkwinkel aus 3D-Weltkoordinaten oder aus der 2D-Bildprojektion berechnen">Winkel aus
+      <select id="selAngleSrc">
+        <option value="3d">3D-Weltkoordinaten</option>
+        <option value="2d">2D-Bild (Projektion)</option>
+      </select>
+    </label>
+    <label class="chk"><input type="checkbox" id="chkMirror" checked>Spiegeln</label>
+    <label class="chk"><input type="checkbox" id="chkAngles" checked>Winkel im Bild</label>
+  </div>
+  <div class="sep"></div>
+  <div class="group">
+    <button id="btnTare" disabled title="Nullabgleich in Neutral-Null-Stellung: aufrecht stehen, Blick geradeaus, Arme hängen gestreckt neben dem Körper, Handflächen nach vorn, Füße parallel und hüftbreit, Knie gestreckt. Webcam: 3 s Countdown, dann 1 s Mittelung. Video: das aktuelle Bild wird verwendet.">Nullabgleich (Neutral-Null)</button>
+    <button id="btnRec" disabled title="Gelenkwinkel und 3D-Koordinaten aufzeichnen und als CSV speichern">● Aufzeichnen (CSV)</button>
+    <button id="btnHelp">Hilfe</button>
+  </div>
+  <div id="status">Lade MediaPipe …</div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Video mit 2D-Skelett <span class="hint" id="fps"></span></h2>
+    <div id="videoWrap">
+      <div id="videoBox">
+        <video id="video" playsinline muted></video>
+        <canvas id="overlay"></canvas>
+      </div>
+      <div id="tareMsg"></div>
+      <div id="placeholder">Webcam starten oder ein Video laden.<br>Die Verarbeitung läuft vollständig lokal im Browser.</div>
+    </div>
+    <div id="videoCtl">
+      <button id="btnPlay">⏸</button>
+      <button id="btnStepBack" title="Ein Bild zurück">⏮</button>
+      <button id="btnStepFwd" title="Ein Bild vor">⏭</button>
+      <input type="range" id="seek" min="0" max="1000" value="0">
+      <span id="timeLbl" style="font-variant-numeric: tabular-nums; color: var(--muted)">0,0 s</span>
+      <select id="selRate">
+        <option value="0.1">0,1×</option>
+        <option value="0.25">0,25×</option>
+        <option value="0.5">0,5×</option>
+        <option value="1" selected>1×</option>
+      </select>
+      <label class="chk"><input type="checkbox" id="chkLoop" checked>Schleife</label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3D-Skelett (Weltkoordinaten, Ursprung = Hüftmitte)
+      <span class="hint">Ziehen = drehen · Mausrad = zoomen · Doppelklick = Ansicht zurücksetzen</span></h2>
+    <canvas id="view3d"></canvas>
+    <div style="position:absolute; right:10px; bottom:10px; display:flex; gap:6px;">
+      <button data-view="front">Frontal</button>
+      <button data-view="side">Sagittal</button>
+      <button data-view="top">Von oben</button>
+      <label class="chk"><input type="checkbox" id="chkSpin">Drehen</label>
+    </div>
+  </section>
+
+  <div id="bottom">
+    <section class="card">
+      <h2>Gelenkwinkel <span class="hint" id="angleSrcHint">aus 3D-Weltkoordinaten</span></h2>
+      <table>
+        <thead><tr><th>Gelenk</th><th>Links</th><th>Rechts</th></tr></thead>
+        <tbody id="angleBody"></tbody>
+      </table>
+    </section>
+    <section class="card">
+      <h2><span id="plotTitle">Kniebeugung</span> – Verlauf der letzten 10 s
+        <span class="legend" style="margin-left:auto"><span class="l">links</span><span class="r">rechts</span></span></h2>
+      <canvas id="plot"></canvas>
+    </section>
+  </div>
+</main>
+
+<div id="help"><div class="box">
+  <h3>Hinweise zur Demo</h3>
+  <ul>
+    <li><b>Was passiert?</b> Das neuronale Netz <i>MediaPipe Pose Landmarker</i> (Google) schätzt in jedem Videobild 33 Körperpunkte („Landmarks“). Es gibt zwei Ausgaben: <b>2D-Bildkoordinaten</b> (normiert auf Bildbreite/-höhe, dazu eine relative Tiefe) und <b>3D-Weltkoordinaten</b> in Metern mit dem Ursprung in der Hüftmitte.</li>
+    <li><b>3D aus einer Kamera:</b> Die Tiefe wird aus einem einzigen Bild <i>geschätzt</i> (gelernt aus Trainingsdaten), nicht gemessen. Sie ist deshalb deutlich unsicherer als bei Mehrkamera- oder markerbasierten Systemen.</li>
+    <li><b>Gelenkwinkel:</b> Beugung von Knie, Hüfte und Ellbogen = 180° minus eingeschlossener Winkel; Schulter = Winkel zwischen Rumpf und Oberarm; Sprunggelenk = 90° minus Winkel zwischen Unterschenkel und Fuß (positiv = Dorsalextension). Alle Winkel sind vorzeichenlos (z.&nbsp;B. keine Unterscheidung Hüftflexion/-extension) und nicht auf anatomische Ebenen zerlegt.</li>
+    <li><b>Warum zeigt ein gestreckter Ellbogen 10–20°?</b> Die Tiefe (z) jedes Punktes wird aus <i>einem</i> Kamerabild nur geschätzt. Schon wenige Zentimeter Tiefenfehler an Schulter, Ellbogen oder Handgelenk „knicken“ ein gestrecktes Segment in der 3D-Rekonstruktion. Dazu kommen der physiologische Valguswinkel des Ellbogens (Carrying angle, ca. 10–15° bei supiniertem Unterarm) und die Tatsache, dass die Punkte auf der Körperoberfläche statt in den Gelenkzentren liegen. Abhilfe: <b>Nullabgleich in Neutral-Null-Stellung</b> – aufrecht stehen, Blick geradeaus, Arme gestreckt neben dem Körper hängend, Handflächen nach vorn (Unterarm supiniert), Füße parallel und hüftbreit, Hüfte und Knie gestreckt. Bei der Webcam läuft nach dem Klick ein Countdown von 3 s, dann werden die Winkel 1 s lang gemittelt und als 0° gesetzt; bei Videos wird das aktuelle (pausierte) Bild verwendet. Das entspricht der Neutral-Null-Methode bzw. dem statischen Referenzversuch im Ganglabor. Danach sind auch negative Werte (Überstreckung) möglich. Bewegungen in der Bildebene lassen sich alternativ mit „Winkel aus: 2D-Bild“ messen.</li>
+    <li><b>2D vs. 3D:</b> Mit „Winkel aus: 2D-Bild“ werden die Winkel aus der Bildprojektion berechnet. Gut zu sehen: Steht die Person schräg zur Kamera, weichen 2D-Winkel stark vom 3D-Wert ab (Projektionsfehler).</li>
+    <li><b>Blasse Werte</b> bedeuten geringe Sichtbarkeit (<i>visibility</i> &lt; 0,5) eines beteiligten Punktes – z.&nbsp;B. verdeckte Körperseite.</li>
+    <li><b>Video-Steuerung:</b> Zeitlupe (0,1×–1×) und Einzelbild-Schritte. Die Erkennung wird für jedes angezeigte Bild neu berechnet.</li>
+    <li><b>Aufzeichnen:</b> Speichert pro Bild Zeit, alle Gelenkwinkel und die 3D-Weltkoordinaten aller 33 Punkte als CSV (Trennzeichen Semikolon, Dezimalkomma – direkt in Excel lesbar).</li>
+    <li><b>Datenschutz:</b> Alles läuft lokal im Browser, es werden keine Bilder übertragen.</li>
+  </ul>
+  <p style="color:var(--muted); font-size:12px">MediaPipe Tasks Vision __MP_VERSION__ (Apache-2.0) · Modelle pose_landmarker_full/lite (Apache-2.0, siehe Model Card von Google). Demo für Lehrzwecke, keine Messgenauigkeit zugesichert.</p>
+  <p style="text-align:right"><button id="btnHelpClose" class="primary">Schließen</button></p>
+</div></div>
+
+<!-- Eingebettete Ressourcen (gzip + base64), damit die Seite ohne Internet und ohne Webserver läuft -->
+<script type="application/octet-stream" id="res-bundle">__RES_BUNDLE__</script>
+<script type="application/octet-stream" id="res-wasmjs">__RES_WASMJS__</script>
+<script type="application/octet-stream" id="res-wasm">__RES_WASM__</script>
+<script type="application/octet-stream" id="res-full">__RES_FULL__</script>
+<script type="application/octet-stream" id="res-lite">__RES_LITE__</script>
+
+<script type="module">
+// ---------- Ressourcen entpacken ----------
+async function unpack(id, type) {
+  const el = document.getElementById(id);
+  const b64 = el.textContent.trim();
+  el.textContent = "";                       // Speicher freigeben
+  const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const stream = new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const buf = await new Response(stream).arrayBuffer();
+  return type ? new Blob([buf], { type }) : new Uint8Array(buf);
+}
+const $ = id => document.getElementById(id);
+const statusEl = $("status");
+function setStatus(msg, err = false) { statusEl.textContent = msg; statusEl.classList.toggle("err", err); }
+
+let PoseLandmarker, fileset;
+const models = {};
+let landmarker = null, currentModel = null;
+
+async function init() {
+  const bundleUrl = URL.createObjectURL(await unpack("res-bundle", "text/javascript"));
+  const mp = await import(bundleUrl);
+  PoseLandmarker = mp.PoseLandmarker;
+  fileset = {
+    wasmLoaderPath: URL.createObjectURL(await unpack("res-wasmjs", "text/javascript")),
+    wasmBinaryPath: URL.createObjectURL(await unpack("res-wasm", "application/wasm")),
+  };
+  await loadModel($("selModel").value);
+}
+
+async function loadModel(name) {
+  setStatus(`Lade Modell „${name}“ …`);
+  if (!models[name]) models[name] = await unpack("res-" + name);
+  if (landmarker) { landmarker.close(); landmarker = null; }
+  const opts = (delegate) => ({
+    baseOptions: { modelAssetBuffer: models[name], delegate },
+    runningMode: "VIDEO", numPoses: 1,
+    minPoseDetectionConfidence: 0.5, minPosePresenceConfidence: 0.5, minTrackingConfidence: 0.5,
+  });
+  let delegate = "GPU";
+  try {
+    landmarker = await PoseLandmarker.createFromOptions(fileset, opts("GPU"));
+  } catch (e) {
+    console.warn("GPU nicht verfügbar, nutze CPU", e);
+    delegate = "CPU";
+    landmarker = await PoseLandmarker.createFromOptions(fileset, opts("CPU"));
+  }
+  currentModel = name;
+  setStatus(`Bereit · Modell ${name} · ${delegate === "GPU" ? "GPU" : "CPU"}`);
+  $("btnCam").disabled = false;
+  lastVideoTime = -1;
+}
+
+// ---------- Landmarks / Skelett ----------
+const L = { nose: 0, lSh: 11, rSh: 12, lEl: 13, rEl: 14, lWr: 15, rWr: 16, lHip: 23, rHip: 24,
+  lKn: 25, rKn: 26, lAn: 27, rAn: 28, lHeel: 29, rHeel: 30, lToe: 31, rToe: 32 };
+// [a, b, Seite] Seite: l / r / c
+const BONES = [
+  [11,12,"c"],[23,24,"c"],[11,23,"l"],[12,24,"r"],
+  [11,13,"l"],[13,15,"l"],[15,17,"l"],[15,19,"l"],[15,21,"l"],[17,19,"l"],
+  [12,14,"r"],[14,16,"r"],[16,18,"r"],[16,20,"r"],[16,22,"r"],[18,20,"r"],
+  [23,25,"l"],[25,27,"l"],[27,29,"l"],[29,31,"l"],[27,31,"l"],
+  [24,26,"r"],[26,28,"r"],[28,30,"r"],[30,32,"r"],[28,32,"r"],
+  [0,1,"l"],[1,2,"l"],[2,3,"l"],[3,7,"l"],[0,4,"r"],[4,5,"r"],[5,6,"r"],[6,8,"r"],[9,10,"c"],
+];
+const SIDE_COLOR = { l: "#ff8a3d", r: "#4da3ff", c: "#d9dde1" };
+function pointSide(i) { if (i === 0) return "c"; if (i <= 3) return "l"; if (i <= 6) return "r"; return (i % 2 ? "l" : "r"); }
+
+// ---------- Winkel ----------
+const sub = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+const dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+const norm = a => Math.hypot(a[0], a[1], a[2]);
+function angleBetween(u, v) {
+  const c = dot(u, v) / (norm(u) * norm(v) || 1);
+  return Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI;
+}
+// Definitionen: compute(P) -> Winkel in Grad; pts = beteiligte Landmarks
+function jointDefs(side) {
+  const s = side === "l" ? "l" : "r";
+  const g = k => L[s + k];
+  return {
+    knee:     { pts: [g("Hip"), g("Kn"), g("An")],  f: P => 180 - angleBetween(sub(P[g("Hip")], P[g("Kn")]), sub(P[g("An")], P[g("Kn")])) },
+    hip:      { pts: [g("Sh"), g("Hip"), g("Kn")],  f: P => 180 - angleBetween(sub(P[g("Sh")], P[g("Hip")]), sub(P[g("Kn")], P[g("Hip")])) },
+    ankle:    { pts: [g("Kn"), g("An"), g("Heel"), g("Toe")], f: P => 90 - angleBetween(sub(P[g("Kn")], P[g("An")]), sub(P[g("Toe")], P[g("Heel")])) },
+    elbow:    { pts: [g("Sh"), g("El"), g("Wr")],   f: P => 180 - angleBetween(sub(P[g("Sh")], P[g("El")]), sub(P[g("Wr")], P[g("El")])) },
+    shoulder: { pts: [g("Hip"), g("Sh"), g("El")],  f: P => angleBetween(sub(P[g("Hip")], P[g("Sh")]), sub(P[g("El")], P[g("Sh")])) },
+    _vertex:  { knee: g("Kn"), hip: g("Hip"), ankle: g("An"), elbow: g("El"), shoulder: g("Sh") },
+  };
+}
+const JOINTS = [
+  ["knee", "Kniebeugung"], ["hip", "Hüftbeugung"], ["ankle", "Sprunggelenk (Dorsalext.)"],
+  ["elbow", "Ellbogenbeugung"], ["shoulder", "Schulter (Elevation)"],
+];
+const DEFS = { l: jointDefs("l"), r: jointDefs("r") };
+let angleSource = "3d";
+let selectedJoint = "knee";
+
+function computeAngles(res) {
+  const out = {};
+  const img = res.landmarks[0], world = res.worldLandmarks[0];
+  const P = angleSource === "3d"
+    ? world.map(p => [p.x, p.y, p.z])
+    : img.map(p => [p.x * vw, p.y * vh, 0]);
+  for (const [key] of JOINTS) {
+    for (const s of ["l", "r"]) {
+      const d = DEFS[s][key];
+      const vis = Math.min(...d.pts.map(i => img[i].visibility ?? 1));
+      out[key + "_" + s] = { v: d.f(P), vis };
+    }
+  }
+  if (tare) for (const k in out) out[k].v -= tare[k] ?? 0;
+  return out;
+}
+
+// ---------- Nullabgleich in Neutral-Null-Stellung (statische Referenz, wie im Ganglabor) ----------
+let tare = null;
+let taring = null; // { t0, sum: {}, n }
+const TARE_COUNTDOWN = 3, TARE_AVG = 1;
+function tareButton() {
+  $("btnTare").textContent = tare ? "Nullabgleich aufheben" : "Nullabgleich (Neutral-Null)";
+  $("btnTare").classList.toggle("primary", !!tare);
+}
+function applyTare(values) {
+  tare = values; taring = null; $("tareMsg").style.display = "none";
+  tareButton(); updateHint(); history.length = 0;
+  if (lastResult) process(lastResult, video.currentTime);
+}
+function rawAngles(res) { const t = tare; tare = null; const a = computeAngles(res); tare = t; return a; }
+function setTare(on) {
+  if (!on) { taring = null; $("tareMsg").style.display = "none"; applyTare(null); return; }
+  if (source === "cam") {
+    taring = { t0: performance.now(), sum: {}, n: 0 };
+    $("tareMsg").style.display = "flex";
+    $("btnTare").textContent = "Abbrechen";
+  } else if (lastResult && lastResult.landmarks.length) {
+    const raw = rawAngles(lastResult), v = {};
+    for (const k in raw) v[k] = raw[k].v;
+    applyTare(v);
+  }
+}
+function tareStep(res) {
+  if (!taring) return;
+  const el = (performance.now() - taring.t0) / 1000;
+  if (el < TARE_COUNTDOWN) {
+    $("tareMsg").innerHTML = `<div><b>Neutral-Null-Stellung einnehmen</b><br>aufrecht, Arme gestreckt hängend, Handflächen nach vorn,<br>Füße parallel, Knie gestreckt<div class="big">${Math.ceil(TARE_COUNTDOWN - el)}</div></div>`;
+    return;
+  }
+  $("tareMsg").innerHTML = `<div><b>Stillhalten …</b><div class="big">●</div></div>`;
+  if (res && res.landmarks.length) {
+    const raw = rawAngles(res);
+    for (const k in raw) taring.sum[k] = (taring.sum[k] || 0) + raw[k].v;
+    taring.n++;
+  }
+  if (el >= TARE_COUNTDOWN + TARE_AVG) {
+    if (!taring.n) { taring = null; $("tareMsg").style.display = "none"; tareButton(); setStatus("Nullabgleich fehlgeschlagen: keine Person erkannt", true); return; }
+    const v = {}; for (const k in taring.sum) v[k] = taring.sum[k] / taring.n;
+    applyTare(v);
+    setStatus("Nullabgleich in Neutral-Null-Stellung gespeichert");
+  }
+}
+function updateHint() {
+  $("angleSrcHint").textContent = (angleSource === "3d" ? "aus 3D-Weltkoordinaten" : "aus 2D-Bildkoordinaten (Projektion)") + (tare ? " · nullabgeglichen" : "");
+}
+
+// Tabelle aufbauen
+const angleBody = $("angleBody");
+for (const [key, label] of JOINTS) {
+  const tr = document.createElement("tr");
+  tr.dataset.key = key;
+  tr.innerHTML = `<td>${label}</td><td class="l" id="a_${key}_l">–</td><td class="r" id="a_${key}_r">–</td>`;
+  tr.onclick = () => { selectedJoint = key; markSel(); history.length = 0; };
+  angleBody.appendChild(tr);
+}
+function markSel() {
+  for (const tr of angleBody.children) tr.classList.toggle("sel", tr.dataset.key === selectedJoint);
+  $("plotTitle").textContent = JOINTS.find(j => j[0] === selectedJoint)[1];
+}
+markSel();
+const fmt = v => v.toFixed(0).replace("-0", "0") + "°";
+function updateTable(a) {
+  for (const [key] of JOINTS) for (const s of ["l", "r"]) {
+    const el = $(`a_${key}_${s}`);
+    if (!a) { el.textContent = "–"; el.classList.remove("low"); continue; }
+    const x = a[key + "_" + s];
+    el.textContent = fmt(x.v);
+    el.classList.toggle("low", x.vis < 0.5);
+  }
+}
+
+// ---------- 2D-Overlay ----------
+const video = $("video"), overlay = $("overlay"), octx = overlay.getContext("2d");
+let vw = 640, vh = 480;
+function layoutVideo() {
+  const wrap = $("videoWrap"), box = $("videoBox");
+  if (!video.videoWidth) return;
+  vw = video.videoWidth; vh = video.videoHeight;
+  const s = Math.min(wrap.clientWidth / vw, wrap.clientHeight / vh);
+  box.style.width = Math.floor(vw * s) + "px";
+  box.style.height = Math.floor(vh * s) + "px";
+  const dpr = window.devicePixelRatio || 1;
+  overlay.width = Math.floor(vw * s * dpr); overlay.height = Math.floor(vh * s * dpr);
+}
+function drawOverlay(res, angles) {
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!res || !res.landmarks.length) return;
+  const W = overlay.width, H = overlay.height, lm = res.landmarks[0];
+  const mirrored = $("videoBox").classList.contains("mirror");
+  const X = p => (mirrored ? 1 - p.x : p.x) * W, Y = p => p.y * H;
+  const sc = W / 640;
+  const lw = Math.max(2, 3 * sc);
+  octx.lineCap = "round";
+  for (const [a, b, side] of BONES) {
+    const pa = lm[a], pb = lm[b];
+    const v = Math.min(pa.visibility ?? 1, pb.visibility ?? 1);
+    octx.globalAlpha = v < 0.5 ? 0.3 : 0.95;
+    octx.strokeStyle = SIDE_COLOR[side]; octx.lineWidth = lw;
+    octx.beginPath(); octx.moveTo(X(pa), Y(pa)); octx.lineTo(X(pb), Y(pb)); octx.stroke();
+  }
+  for (let i = 0; i < lm.length; i++) {
+    const p = lm[i];
+    octx.globalAlpha = (p.visibility ?? 1) < 0.5 ? 0.3 : 1;
+    octx.fillStyle = "#fff"; octx.strokeStyle = SIDE_COLOR[pointSide(i)]; octx.lineWidth = Math.max(1.5, 2 * sc);
+    octx.beginPath(); octx.arc(X(p), Y(p), Math.max(2.5, 3.5 * sc), 0, 2 * Math.PI); octx.fill(); octx.stroke();
+  }
+  octx.globalAlpha = 1;
+  if (!angles || !$("chkAngles").checked) return;
+  const fs = Math.round(Math.max(12, 15 * sc));
+  octx.font = `600 ${fs}px system-ui, sans-serif`;
+  octx.textBaseline = "middle";
+  for (const s of ["l", "r"]) for (const key of ["knee", "hip", "elbow"]) {
+    const a = angles[key + "_" + s]; if (a.vis < 0.5) continue;
+    const p = lm[DEFS[s]._vertex[key]];
+    // Beschriftung auf die Außenseite des Körpers setzen
+    const other = lm[DEFS[s === "l" ? "r" : "l"]._vertex[key]];
+    const outward = Math.sign(X(p) - X(other)) || 1;
+    const txt = fmt(a.v), w = octx.measureText(txt).width;
+    const x = X(p) + outward * 12 * sc - (outward < 0 ? w : 0), y = Y(p);
+    octx.fillStyle = "rgba(0,0,0,.65)";
+    octx.fillRect(x - 4, y - fs / 2 - 3, w + 8, fs + 6);
+    octx.fillStyle = SIDE_COLOR[s];
+    octx.fillText(txt, x, y);
+  }
+}
+
+// ---------- 3D-Ansicht ----------
+const c3 = $("view3d"), ctx3 = c3.getContext("2d");
+const VIEWS = { front: [0, 0.12], side: [Math.PI / 2, 0.12], top: [0, Math.PI / 2 - 0.01] };
+let yaw = -0.5, pitch = 0.25, zoom = 1, spin = false;
+let lastWorld = null;
+(function setup3dInput() {
+  let drag = null;
+  c3.addEventListener("pointerdown", e => { drag = [e.clientX, e.clientY, yaw, pitch]; c3.setPointerCapture(e.pointerId); });
+  c3.addEventListener("pointermove", e => {
+    if (!drag) return;
+    yaw = drag[2] + (e.clientX - drag[0]) * 0.01;
+    pitch = Math.max(-1.5, Math.min(1.55, drag[3] + (e.clientY - drag[1]) * 0.01));
+    draw3d();
+  });
+  c3.addEventListener("pointerup", () => drag = null);
+  c3.addEventListener("wheel", e => { e.preventDefault(); zoom = Math.max(0.3, Math.min(4, zoom * Math.exp(-e.deltaY * 0.001))); draw3d(); }, { passive: false });
+  c3.addEventListener("dblclick", () => { yaw = -0.5; pitch = 0.25; zoom = 1; draw3d(); });
+  document.querySelectorAll("[data-view]").forEach(b => b.onclick = () => { [yaw, pitch] = VIEWS[b.dataset.view]; draw3d(); });
+  $("chkSpin").onchange = e => spin = e.target.checked;
+})();
+function resize3d() {
+  const dpr = window.devicePixelRatio || 1;
+  c3.width = Math.floor(c3.clientWidth * dpr); c3.height = Math.floor(c3.clientHeight * dpr);
+  draw3d();
+}
+// Welt (MediaPipe): x nach rechts im Bild, y nach unten, z zur Kamera hin negativ.
+// Anzeige: X = x, Y = -y (oben), Z = -z (zur Kamera hin positiv)
+function project(p) {
+  const x = p[0], y = p[1], z = p[2];
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const x1 = cy * x + sy * z, z1 = -sy * x + cy * z;
+  const y2 = cp * y - sp * z1, z2 = sp * y + cp * z1;
+  const W = c3.width, H = c3.height;
+  const f = Math.min(W, H) * 0.42 * zoom;
+  const camDist = 3.2;
+  const persp = camDist / (camDist - z2);
+  return [W / 2 + x1 * f * persp, H * 0.55 - y2 * f * persp, z2];
+}
+function draw3d() {
+  const W = c3.width, H = c3.height;
+  ctx3.clearRect(0, 0, W, H);
+  const dpr = window.devicePixelRatio || 1;
+  // Boden in Fußhöhe
+  let floorY = -0.9;
+  let P = null;
+  if (lastWorld) {
+    P = lastWorld.map(p => [p.x, -p.y, -p.z]);
+    floorY = Math.min(...[27, 28, 29, 30, 31, 32].map(i => P[i][1]));
+  }
+  ctx3.lineWidth = 1 * dpr;
+  for (let i = -5; i <= 5; i++) {
+    const g = i * 0.2;
+    ctx3.strokeStyle = i === 0 ? "#3b4652" : "#262e36";
+    let a = project([g, floorY, -1]), b = project([g, floorY, 1]);
+    ctx3.beginPath(); ctx3.moveTo(a[0], a[1]); ctx3.lineTo(b[0], b[1]); ctx3.stroke();
+    a = project([-1, floorY, g]); b = project([1, floorY, g]);
+    ctx3.beginPath(); ctx3.moveTo(a[0], a[1]); ctx3.lineTo(b[0], b[1]); ctx3.stroke();
+  }
+  // Achsenkreuz im Ursprung (Hüftmitte)
+  const o = project([0, 0, 0]);
+  const axes = [[[0.25, 0, 0], "#e05555", "x"], [[0, 0.25, 0], "#55c46a", "y"], [[0, 0, 0.25], "#5577ee", "z"]];
+  ctx3.font = `${11 * dpr}px system-ui, sans-serif`;
+  for (const [v, col, name] of axes) {
+    const e = project(v);
+    ctx3.strokeStyle = col; ctx3.fillStyle = col; ctx3.lineWidth = 1.5 * dpr;
+    ctx3.beginPath(); ctx3.moveTo(o[0], o[1]); ctx3.lineTo(e[0], e[1]); ctx3.stroke();
+    ctx3.fillText(name, e[0] + 3 * dpr, e[1] - 3 * dpr);
+  }
+  // Maßstab
+  ctx3.fillStyle = "#6b7782"; ctx3.font = `${11 * dpr}px system-ui, sans-serif`;
+  ctx3.fillText("Bodenraster: 20 cm · Kamera blickt entlang −z", 10 * dpr, H - 12 * dpr);
+  if (!P) {
+    ctx3.fillStyle = "#6b7782"; ctx3.font = `${14 * dpr}px system-ui, sans-serif`;
+    ctx3.textAlign = "center"; ctx3.fillText("Noch keine Person erkannt", W / 2, H / 2); ctx3.textAlign = "left";
+    return;
+  }
+  const Q = P.map(project);
+  // Schatten auf dem Boden
+  ctx3.strokeStyle = "rgba(255,255,255,.08)"; ctx3.lineWidth = 3 * dpr;
+  for (const [a, b] of BONES) {
+    const sa = project([P[a][0], floorY, P[a][2]]), sb = project([P[b][0], floorY, P[b][2]]);
+    ctx3.beginPath(); ctx3.moveTo(sa[0], sa[1]); ctx3.lineTo(sb[0], sb[1]); ctx3.stroke();
+  }
+  // Knochen nach Tiefe sortiert zeichnen
+  const segs = BONES.map(([a, b, s]) => ({ a, b, s, z: (Q[a][2] + Q[b][2]) / 2 })).sort((m, n) => m.z - n.z);
+  ctx3.lineCap = "round";
+  for (const { a, b, s, z } of segs) {
+    ctx3.strokeStyle = SIDE_COLOR[s];
+    ctx3.globalAlpha = Math.max(0.45, Math.min(1, 0.8 + z * 0.5));
+    ctx3.lineWidth = 4 * dpr * (3.2 / (3.2 - z));
+    ctx3.beginPath(); ctx3.moveTo(Q[a][0], Q[a][1]); ctx3.lineTo(Q[b][0], Q[b][1]); ctx3.stroke();
+  }
+  ctx3.globalAlpha = 1;
+  for (let i = 0; i < Q.length; i++) {
+    ctx3.fillStyle = "#fff"; ctx3.strokeStyle = SIDE_COLOR[pointSide(i)]; ctx3.lineWidth = 1.5 * dpr;
+    ctx3.beginPath(); ctx3.arc(Q[i][0], Q[i][1], 3 * dpr, 0, 2 * Math.PI); ctx3.fill(); ctx3.stroke();
+  }
+}
+
+// ---------- Zeitverlauf ----------
+const plot = $("plot"), pctx = plot.getContext("2d");
+const history = []; // {t, l, r}
+const WINDOW = 10;
+function resizePlot() {
+  const dpr = window.devicePixelRatio || 1;
+  plot.width = Math.floor(plot.clientWidth * dpr); plot.height = Math.floor(plot.clientHeight * dpr);
+  drawPlot();
+}
+function drawPlot() {
+  const W = plot.width, H = plot.height, dpr = window.devicePixelRatio || 1;
+  pctx.clearRect(0, 0, W, H);
+  const padL = 40 * dpr, padB = 18 * dpr, padT = 8 * dpr, padR = 22 * dpr;
+  let lo = 0, hi = 90;
+  for (const h of history) for (const v of [h.l, h.r]) if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  lo = Math.floor(lo / 30) * 30; hi = Math.ceil(hi / 30) * 30;
+  const tNow = history.length ? history[history.length - 1].t : 0;
+  const X = t => padL + (1 - (tNow - t) / WINDOW) * (W - padL - padR);
+  const Y = v => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+  pctx.font = `${10 * dpr}px system-ui, sans-serif`; pctx.fillStyle = "#6b7782"; pctx.strokeStyle = "#2a323a"; pctx.lineWidth = 1;
+  pctx.textAlign = "right"; pctx.textBaseline = "middle";
+  for (let v = lo; v <= hi; v += 30) {
+    pctx.beginPath(); pctx.moveTo(padL, Y(v)); pctx.lineTo(W - padR, Y(v)); pctx.stroke();
+    pctx.fillText(v + "°", padL - 5 * dpr, Y(v));
+  }
+  pctx.textAlign = "center"; pctx.textBaseline = "top";
+  for (let s = 0; s <= WINDOW; s += 2) pctx.fillText(s === 0 ? "jetzt" : `−${s} s`, X(tNow - s), H - padB + 4 * dpr);
+  for (const [k, col] of [["l", "#ff8a3d"], ["r", "#4da3ff"]]) {
+    pctx.strokeStyle = col; pctx.lineWidth = 2 * dpr; pctx.beginPath();
+    let pen = false;
+    for (const h of history) {
+      if (h[k] == null) { pen = false; continue; }
+      const x = X(h.t), y = Y(h[k]);
+      if (pen) pctx.lineTo(x, y); else { pctx.moveTo(x, y); pen = true; }
+    }
+    pctx.stroke();
+  }
+}
+
+// ---------- Aufzeichnung ----------
+let recording = false, recRows = [];
+const NAMES = ["Nase","Auge_innen_L","Auge_L","Auge_aussen_L","Auge_innen_R","Auge_R","Auge_aussen_R","Ohr_L","Ohr_R","Mund_L","Mund_R",
+  "Schulter_L","Schulter_R","Ellbogen_L","Ellbogen_R","Handgelenk_L","Handgelenk_R","Kleinfinger_L","Kleinfinger_R","Zeigefinger_L","Zeigefinger_R","Daumen_L","Daumen_R",
+  "Huefte_L","Huefte_R","Knie_L","Knie_R","Knoechel_L","Knoechel_R","Ferse_L","Ferse_R","Fussspitze_L","Fussspitze_R"];
+function recordFrame(t, angles, world) {
+  const row = [t];
+  for (const [key] of JOINTS) for (const s of ["l", "r"]) row.push(angles[key + "_" + s].v);
+  for (const p of world) row.push(p.x, -p.y, -p.z);
+  recRows.push(row);
+}
+function saveCsv() {
+  const head = ["Zeit_s"];
+  for (const [, label] of JOINTS) for (const s of ["links", "rechts"]) head.push(`${label} ${s}${tare ? " nullabgeglichen" : ""} [°]`);
+  for (const n of NAMES) head.push(`${n}_X [m]`, `${n}_Y [m]`, `${n}_Z [m]`);
+  const num = v => (Math.round(v * 10000) / 10000).toString().replace(".", ",");
+  const lines = [head.join(";"), ...recRows.map(r => r.map(num).join(";"))];
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  const d = new Date(), pad = n => String(n).padStart(2, "0");
+  a.href = URL.createObjectURL(blob);
+  a.download = `Bewegungsanalyse_${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.csv`;
+  a.click();
+}
+$("btnRec").onclick = () => {
+  if (!recording) {
+    recording = true; recRows = []; recStart = null;
+    $("btnRec").textContent = "■ Aufzeichnung beenden"; $("btnRec").classList.add("rec");
+  } else {
+    recording = false;
+    $("btnRec").textContent = "● Aufzeichnen (CSV)"; $("btnRec").classList.remove("rec");
+    if (recRows.length) saveCsv();
+    setStatus(`${recRows.length} Bilder als CSV gespeichert`);
+  }
+};
+let recStart = null;
+
+// ---------- Quellen: Webcam / Datei ----------
+let source = null; // "cam" | "file"
+let lastVideoTime = -1, lastResult = null, lastAngles = null;
+let frameCount = 0, fpsT0 = performance.now();
+
+function stopSource() {
+  if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+  if (video.src) { URL.revokeObjectURL(video.src); video.removeAttribute("src"); video.load(); }
+  if (tare || taring) setTare(false);
+  source = null; lastResult = null; lastWorld = null; lastAngles = null; history.length = 0;
+  $("placeholder").style.display = ""; $("videoCtl").style.display = "none";
+  $("btnStop").disabled = true; $("btnRec").disabled = true; $("btnTare").disabled = true;
+  if (recording) $("btnRec").click();
+  octx.clearRect(0, 0, overlay.width, overlay.height); updateTable(null); draw3d(); drawPlot();
+  $("fps").textContent = "";
+}
+$("btnStop").onclick = stopSource;
+$("btnTare").onclick = () => setTare(!(tare || taring));
+
+$("btnCam").onclick = async () => {
+  stopSource();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    video.srcObject = stream;
+    source = "cam";
+    $("videoBox").classList.toggle("mirror", $("chkMirror").checked);
+    await video.play();
+    started();
+  } catch (e) {
+    setStatus("Webcam nicht verfügbar: " + e.message, true);
+  }
+};
+$("fileInput").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  stopSource();
+  video.src = URL.createObjectURL(f);
+  source = "file";
+  $("videoBox").classList.remove("mirror");
+  video.loop = $("chkLoop").checked;
+  video.playbackRate = parseFloat($("selRate").value);
+  $("videoCtl").style.display = "flex";
+  try { await video.play(); } catch (err) { setStatus("Video kann nicht abgespielt werden: " + err.message, true); return; }
+  started();
+  e.target.value = "";
+};
+function started() {
+  $("placeholder").style.display = "none";
+  $("btnStop").disabled = false; $("btnRec").disabled = false; $("btnTare").disabled = false;
+  layoutVideo();
+  requestAnimationFrame(loop);
+}
+$("chkMirror").onchange = e => { if (source === "cam") $("videoBox").classList.toggle("mirror", e.target.checked); };
+$("selModel").onchange = async e => { $("btnCam").disabled = true; await loadModel(e.target.value); };
+$("selAngleSrc").onchange = e => {
+  angleSource = e.target.value; history.length = 0;
+  tare = null; taring = null; $("tareMsg").style.display = "none"; tareButton();
+  updateHint();
+  if (lastResult && lastResult.landmarks.length) process(lastResult, video.currentTime);
+};
+
+// Video-Steuerung
+const fmtTime = t => t.toFixed(1).replace(".", ",") + " s";
+$("btnPlay").onclick = () => { if (video.paused) video.play(); else video.pause(); };
+video.addEventListener("play", () => $("btnPlay").textContent = "⏸");
+video.addEventListener("pause", () => $("btnPlay").textContent = "▶");
+video.addEventListener("loadedmetadata", layoutVideo);
+video.addEventListener("seeked", () => { if (source === "file") detectNow(true); });
+$("seek").oninput = e => { if (video.duration) video.currentTime = e.target.value / 1000 * video.duration; };
+$("selRate").onchange = e => video.playbackRate = parseFloat(e.target.value);
+$("chkLoop").onchange = e => video.loop = e.target.checked;
+const STEP = 1 / 30;
+$("btnStepFwd").onclick = () => { video.pause(); video.currentTime = Math.min(video.duration, video.currentTime + STEP); };
+$("btnStepBack").onclick = () => { video.pause(); video.currentTime = Math.max(0, video.currentTime - STEP); };
+
+// ---------- Hauptschleife ----------
+let mpTimestamp = 0;
+function detectNow(force = false) {
+  if (!landmarker || !source || video.readyState < 2) return;
+  if (!force && video.currentTime === lastVideoTime) return;
+  lastVideoTime = video.currentTime;
+  // MediaPipe verlangt streng steigende Zeitstempel (auch beim Zurückspulen)
+  mpTimestamp = Math.max(mpTimestamp + 1, performance.now());
+  const res = landmarker.detectForVideo(video, mpTimestamp);
+  process(res, video.currentTime);
+  frameCount++;
+}
+function process(res, vt) {
+  lastResult = res;
+  tareStep(res);
+  if (res.landmarks.length) {
+    lastWorld = res.worldLandmarks[0];
+    lastAngles = computeAngles(res);
+    const t = source === "cam" ? performance.now() / 1000 : vt;
+    if (source === "file" && history.length && t < history[history.length - 1].t) history.length = 0; // Sprung zurück
+    history.push({ t, l: lastAngles[selectedJoint + "_l"].v, r: lastAngles[selectedJoint + "_r"].v });
+    while (history.length && history[history.length - 1].t - history[0].t > WINDOW) history.shift();
+    if (recording) {
+      const now = source === "cam" ? performance.now() / 1000 : vt;
+      if (recStart === null) recStart = now;
+      recordFrame(source === "cam" ? now - recStart : vt, lastAngles, res.worldLandmarks[0]);
+    }
+  } else {
+    lastAngles = null;
+  }
+  drawOverlay(res, lastAngles);
+  updateTable(lastAngles);
+  draw3d();
+  drawPlot();
+}
+function loop() {
+  if (!source) return;
+  detectNow();
+  if (spin) { yaw += 0.01; draw3d(); }
+  if (source === "file" && video.duration) {
+    $("seek").value = Math.round(video.currentTime / video.duration * 1000);
+    $("timeLbl").textContent = fmtTime(video.currentTime);
+  }
+  const now = performance.now();
+  if (now - fpsT0 > 1000) {
+    $("fps").textContent = `${Math.round(frameCount * 1000 / (now - fpsT0))} Bilder/s analysiert`;
+    frameCount = 0; fpsT0 = now;
+  }
+  requestAnimationFrame(loop);
+}
+// 3D-Ansicht dreht sich auch ohne Video
+(function idleSpin() { if (spin && !source) { yaw += 0.01; draw3d(); } requestAnimationFrame(idleSpin); })();
+
+// ---------- Hilfe / Layout ----------
+$("btnHelp").onclick = () => $("help").style.display = "flex";
+$("btnHelpClose").onclick = () => $("help").style.display = "none";
+$("help").onclick = e => { if (e.target.id === "help") $("help").style.display = "none"; };
+window.addEventListener("resize", () => { layoutVideo(); resize3d(); resizePlot(); if (lastResult) drawOverlay(lastResult, lastAngles); });
+new ResizeObserver(() => { layoutVideo(); resize3d(); resizePlot(); }).observe(document.querySelector("main"));
+resize3d(); resizePlot();
+
+// Testhaken (für automatisierte Prüfung)
+window.__demo = { get result() { return lastResult; }, get angles() { return lastAngles; } };
+
+init().catch(e => { console.error(e); setStatus("Fehler beim Laden: " + e.message, true); });
+</script>
+</body>
+</html>
