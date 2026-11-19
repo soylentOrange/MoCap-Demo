@@ -29,21 +29,14 @@ Kleine Demo für die Vorlesung *Biomechanik II – Bewegungsanalyse*: Ein neuron
 
 Alle Winkel sind vorzeichenlos (z. B. keine Unterscheidung Hüftflexion/-extension) und nicht in anatomische Ebenen zerlegt. Blasse Werte = Punkt kaum sichtbar (visibility < 0,5).
 
-## Warum zeigt ein gestreckter Ellbogen 10–20° Beugung?
 
-Die Winkelformel ist korrekt; der Versatz entsteht in den Daten. Prüfung an einem Testbild mit waagrecht gestreckten Armen: in der Bildebene (x/y) ergeben sich 2–3°, mit der geschätzten Tiefe (z) dagegen 12–31°. Der Knick steckt also fast vollständig in der **Tiefenschätzung**, denn aus einer einzigen Kamera wird z nur geschätzt, und wenige Zentimeter Tiefenfehler an Schulter, Ellbogen oder Handgelenk reichen aus. Dazu kommen der physiologische Valguswinkel des Ellbogens (Carrying angle, ca. 10–15° bei supiniertem Unterarm) und die Lage der Punkte auf der Körperoberfläche statt in den Gelenkzentren.
+## Limitationen
 
-Abhilfe: **Nullabgleich in Neutral-Null-Stellung** (s. o.), oder Bewegungen in der Bildebene mit „Winkel aus: 2D-Bild“ messen. Im Hörsaal ist das ein gutes Beispiel dafür, warum Ganglabore einen statischen Referenzversuch machen und warum die Monokular-3D-Schätzung nicht mit Mehrkamerasystemen vergleichbar ist.
-
-## Didaktische Hinweise / Grenzen
-
-- Die Tiefe (3D) wird aus **einer** Kamera *geschätzt*, nicht gemessen – gut als Kontrast zu markerbasierten Mehrkamerasystemen (Vicon, Qualisys) im Labor.
-- Typische Fehlerquellen live zeigen: verdeckte Körperseite, weite Kleidung, schnelle Bewegungen (Bewegungsunschärfe), seitliche vs. frontale Kameraposition.
-- Gute Demo-Bewegungen: Kniebeuge seitlich zur Kamera, Gehen auf der Stelle, Armheben.
-- Für eigene Videos: Person vollständig im Bild, gute Beleuchtung, Kamera ruhig.
+- Die Tiefe (3D) wird aus **einer** Kamera *geschätzt*, nicht gemessen.
+- Typische Fehlerquellen: verdeckte Körperseite, weite Kleidung, schnelle Bewegungen (Bewegungsunschärfe), seitliche vs. frontale Kameraposition.
+- Für gute Auswertung: Person vollständig im Bild, gute Beleuchtung, Kamera ruhig.
 
 ## Technik
 
 - MediaPipe Tasks Vision 1.2.3 (Google, Apache-2.0), Modelle `pose_landmarker_full` und `pose_landmarker_lite` (float16)
 - Läuft per WebGL auf der Grafikkarte, sonst automatisch auf der CPU
-- `_Quellcode/`: Vorlage (`template.html`) und `build.py`, das die Ressourcen einbettet – nur nötig, wenn die Demo geändert werden soll
